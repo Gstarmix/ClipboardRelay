@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1f24">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>📋 Clipboard Relay</title>
+  <link rel="stylesheet" href="/static/vendor/cropperjs/cropper.min.css">
+  <script defer src="/static/vendor/cropperjs/cropper.min.js"></script>
+  <style>
+    :root {
+      --bg: #1c1f24; --bg-elev: #262a31; --bg-elev2: #2f343c;
+      --fg: #e6e6e6; --fg-dim: #9aa0a6; --fg-mute: #6b7280;
+      --accent: #7eb6ff; --accent-dark: #5a96e6;
+      --warn: #ffb454; --err: #ff6e6e; --ok: #b6e3a8;
+      --rec: #ff5252;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; min-height: 100vh; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 16px; line-height: 1.5;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+    }
+    header {
+      padding: 14px 16px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid #333;
+      text-align: center;
+    }
+    header h1 { margin: 0; font-size: 19px; font-weight: 700; }
+    header .sub { color: var(--fg-dim); font-size: 12px; margin-top: 3px; }
+    /* Tabs touch-friendly en haut */
+    .tabs {
+      display: flex;
+      background: var(--bg-elev);
+      border-bottom: 1px solid #333;
+    }
+    .tab {
+      flex: 1;
+      padding: 14px 8px;
+      background: transparent;
+      color: var(--fg-dim);
+      border: 0;
+      border-bottom: 3px solid transparent;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      min-height: 64px;
+    }
+    .tab .tab-emoji { font-size: 22px; }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab:active { background: rgba(126, 182, 255, 0.08); }
+    main {
+      flex: 1;
+      padding: 18px 16px;
+      display: flex; flex-direction: column; gap: 14px;
+      align-items: center;
+    }
+    .mode-section { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+    .mode-section[hidden] { display: none !important; }
+    /* Champ nom custom */
+    .name-field {
+      width: 100%;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .name-field label {
+      font-size: 12px; color: var(--fg-dim); padding-left: 4px;
+    }
+    .name-field input {
+      padding: 12px 14px;
+      background: var(--bg-elev);
+      color: var(--fg);
+      border: 1px solid #444;
+      border-radius: 8px;
+      font-size: 15px;
+      min-height: 48px;
+    }
+    .name-field input:focus { outline: none; border-color: var(--accent); }
+    .name-field .hint { font-size: 11px; color: var(--fg-mute); padding-left: 4px; }
+    /* Bouton principal (capture / start) */
+    .primary-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+      background: var(--accent); color: #111;
+      border: 0; border-radius: 12px;
+      padding: 18px 24px;
+      font-size: 17px; font-weight: 700;
+      cursor: pointer; min-width: 100%; min-height: 64px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+      -webkit-appearance: none;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .primary-btn:active { transform: translateY(2px); box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+    .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+    .secondary-btn {
+      padding: 12px 16px;
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid #555;
+      border-radius: 10px;
+      font-size: 14px; font-weight: 500;
+      cursor: pointer; min-height: 48px;
+    }
+    .secondary-btn:active { background: rgba(255,255,255,0.04); }
+    .file-input { display: none; }
+    /* Status messages */
+    .status {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px; text-align: center;
+      transition: background 0.2s, color 0.2s;
+    }
+    .status.idle { background: rgba(255, 255, 255, 0.04); color: var(--fg-dim); }
+    .status.uploading { background: rgba(255, 180, 84, 0.15); color: var(--warn); }
+    .status.ok { background: rgba(182, 227, 168, 0.15); color: var(--ok); }
+    .status.err { background: rgba(255, 110, 110, 0.15); color: var(--err); }
+    .status[hidden] { display: none; }
+    /* Progress bar */
+    .progress {
+      width: 100%; height: 8px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px; overflow: hidden;
+    }
+    .progress[hidden] { display: none; }
+    .progress-bar {
+      height: 100%; width: 0%;
+      background: var(--accent);
+      transition: width 0.15s;
+    }
+    /* Preview crop (photo) */
+    .crop-container {
+      width: 100%;
+      max-height: 50vh;
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .crop-container img { display: block; max-width: 100%; }
+    .tool-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      width: 100%;
+    }
+    .tool-row button {
+      padding: 12px;
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid #555;
+      border-radius: 8px;
+      font-size: 14px;
+      min-height: 48px;
+    }
+    .tool-row button:active { background: rgba(126, 182, 255, 0.10); }
+    /* Cropper.js handles plus larges */
+    .cropper-container .cropper-point {
+      width: 18px; height: 18px;
+      background-color: var(--accent); opacity: 0.85;
+    }
+    .cropper-container .cropper-point.point-n,
+    .cropper-container .cropper-point.point-s { margin-left: -9px; }
+    .cropper-container .cropper-point.point-e,
+    .cropper-container .cropper-point.point-w { margin-top: -9px; }
+    .cropper-container .cropper-point.point-ne,
+    .cropper-container .cropper-point.point-nw,
+    .cropper-container .cropper-point.point-se,
+    .cropper-container .cropper-point.point-sw {
+      width: 22px; height: 22px;
+      margin-left: -11px; margin-top: -11px;
+    }
+    .cropper-container .cropper-line { background-color: var(--accent); }
+    /* Audio recorder */
+    .audio-rec-area {
+      width: 100%;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      padding: 24px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 12px;
+    }
+    .rec-circle {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      background: var(--bg-elev2);
+      border: 3px solid var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.15s, border-color 0.15s;
+    }
+    .rec-circle:active { transform: scale(0.95); }
+    .rec-circle.recording {
+      background: var(--rec);
+      border-color: var(--rec);
+      animation: pulse-rec 1.2s infinite;
+    }
+    @keyframes pulse-rec {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.55); }
+      50%      { box-shadow: 0 0 0 18px rgba(255, 82, 82, 0); }
+    }
+    .rec-time {
+      font-family: ui-monospace, monospace;
+      font-size: 28px; font-weight: 600;
+      color: var(--fg);
+    }
+    .rec-time.recording { color: var(--rec); }
+    .rec-hint { font-size: 13px; color: var(--fg-dim); text-align: center; }
+    audio { width: 100%; max-width: 100%; }
+    /* Hint général */
+    .hint-card {
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      font-size: 12px; color: var(--fg-dim);
+      line-height: 1.5;
+    }
+    .hint-card strong { color: var(--fg); }
+    .hint-card kbd {
+      background: #444; color: var(--fg);
+      padding: 2px 6px; border-radius: 3px;
+      font-family: ui-monospace, monospace; font-size: 11px;
+      border: 1px solid #555;
+    }
+    footer {
+      padding: 10px;
+      text-align: center;
+      color: var(--fg-mute);
+      font-size: 11px;
+      border-top: 1px solid #2a2a2a;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📋 Clipboard Relay</h1>
+    <div class="sub">Téléphone → PC</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-mode="photo" role="tab">
+      <span class="tab-emoji">📷</span><span>Photo</span>
+    </button>
+    <button class="tab" data-mode="video" role="tab">
+      <span class="tab-emoji">🎥</span><span>Vidéo</span>
+    </button>
+    <button class="tab" data-mode="audio" role="tab">
+      <span class="tab-emoji">🎤</span><span>Audio</span>
+    </button>
+  </nav>
+
+  <main>
+
+    <section class="mode-section" id="mode-photo">
+
+      <div id="photo-capture-area" style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div class="name-field">
+          <label for="photo-name">📝 Nom personnalisé (optionnel)</label>
+          <input type="text" id="photo-name" placeholder="ex: schema-MUX21">
+          <div class="hint">Sera horodaté + ce nom : <code>2026-05-10_140530_schema-MUX21.jpg</code></div>
+        </div>
+        <label for="photo-input" class="primary-btn" id="photo-capture-label">
+          <span>📷</span><span>Prendre une photo</span>
+        </label>
+        <input type="file" id="photo-input" class="file-input" accept="image/*" capture="environment">
+        <div class="hint-card">
+          <strong>Workflow :</strong> Photo → preview avec recadrage et rotation → ✂ Envoyer au PC.
+          Sur PC → <kbd>Ctrl</kbd>+<kbd>V</kbd> dans Claude.ai / AI Studio / Gemini / ChatGPT.
+          La photo est aussi enregistrée dans <code>_uploads/photos/</code>.
+        </div>
+      </div>
+
+      <div id="photo-preview-area" hidden style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div class="crop-container"><img id="crop-img" alt="Preview"></div>
+        <div class="tool-row">
+          <button type="button" id="rotate-left">↺ 90°</button>
+          <button type="button" id="rotate-right">↻ 90°</button>
+          <button type="button" id="reset-crop">↩ Reset</button>
+          <button type="button" id="photo-restart">📷 Autre photo</button>
+        </div>
+        <button type="button" class="primary-btn" id="photo-send-btn">
+          <span>✂</span><span>Envoyer au PC</span>
+        </button>
+        <div class="progress" id="photo-progress" hidden><div class="progress-bar" id="photo-progress-bar"></div></div>
+        <div id="photo-status" class="status idle" hidden></div>
+      </div>
+    </section>
+
+    <section class="mode-section" id="mode-video" hidden>
+
+      <div id="video-capture-area" style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div class="name-field">
+          <label for="video-name">📝 Nom personnalisé (optionnel)</label>
+          <input type="text" id="video-name" placeholder="ex: cours-electronique">
+          <div class="hint">Format <code>YYYY-MM-DD_HHMMSS_nom.mp4</code> · cap 500 MB</div>
+        </div>
+        <label for="video-capture-input" class="primary-btn">
+          <span>🎥</span><span>Filmer une vidéo</span>
+        </label>
+        <input type="file" id="video-capture-input" class="file-input" accept="video/*" capture="environment">
+        <label for="video-import-input" class="secondary-btn" style="width:100%;display:inline-flex;justify-content:center;align-items:center;gap:8px;">
+          📁 Importer une vidéo existante
+        </label>
+        <input type="file" id="video-import-input" class="file-input" accept="video/*">
+        <div class="hint-card">
+          <strong>Pas de Ctrl+V</strong> pour les vidéos (les chats web n'acceptent pas le paste vidéo).
+          Le fichier est juste enregistré dans <code>_uploads/videos/</code>. Tu pourras le récupérer depuis le PC.
+        </div>
+      </div>
+
+      <div id="video-preview-area" hidden style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <video id="video-preview" controls playsinline style="width:100%;max-height:50vh;background:#000;border-radius:8px;"></video>
+        <div id="video-info" class="hint-card" style="text-align:center;"></div>
+        <button type="button" class="primary-btn" id="video-send-btn">
+          <span>🚀</span><span>Envoyer au PC</span>
+        </button>
+        <button type="button" class="secondary-btn" id="video-restart" style="width:100%;">
+          🎥 Autre vidéo
+        </button>
+        <div class="progress" id="video-progress" hidden><div class="progress-bar" id="video-progress-bar"></div></div>
+        <div id="video-status" class="status idle" hidden></div>
+      </div>
+    </section>
+
+    <section class="mode-section" id="mode-audio" hidden>
+
+      <div id="audio-rec-area" style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div class="name-field">
+          <label for="audio-name">📝 Nom personnalisé (optionnel)</label>
+          <input type="text" id="audio-name" placeholder="ex: cours-physique-cm5">
+          <div class="hint">Format <code>YYYY-MM-DD_HHMMSS_nom.webm</code> (Android) ou <code>.m4a</code> (iOS) · cap 1 GB</div>
+        </div>
+        <div class="audio-rec-area">
+          <div class="rec-circle" id="rec-btn" title="Cliquer pour démarrer / arrêter">🎤</div>
+          <div class="rec-time" id="rec-time">0:00</div>
+          <div class="rec-hint" id="rec-hint">Touche le micro pour démarrer l'enregistrement</div>
+        </div>
+        <label for="audio-import-input" class="secondary-btn" style="width:100%;display:inline-flex;justify-content:center;align-items:center;gap:8px;">
+          📁 Importer un audio existant
+        </label>
+        <input type="file" id="audio-import-input" class="file-input" accept="audio/*">
+        <div class="hint-card">
+          <strong>Cours longs (3h+) :</strong> mieux vaut enregistrer avec une app dédiée (Dictaphone Android,
+          Voice Memos iOS) puis cliquer <strong>📁 Importer un audio existant</strong>. L'enregistrement direct
+          via cette page demande que l'écran reste allumé tout du long.
+        </div>
+      </div>
+
+      <div id="audio-preview-area" hidden style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <audio id="audio-preview" controls></audio>
+        <div id="audio-info" class="hint-card" style="text-align:center;"></div>
+        <button type="button" class="primary-btn" id="audio-send-btn">
+          <span>🚀</span><span>Envoyer au PC</span>
+        </button>
+        <button type="button" class="secondary-btn" id="audio-restart" style="width:100%;">
+          🎤 Autre enregistrement
+        </button>
+        <div class="progress" id="audio-progress" hidden><div class="progress-bar" id="audio-progress-bar"></div></div>
+        <div id="audio-status" class="status idle" hidden></div>
+      </div>
+    </section>
+  </main>
+  <footer>v0.1.6 · service local · <a href="/api/health">/api/health</a></footer>
+
+  <script>
+    // ============================================================ Tabs
+    const tabs = document.querySelectorAll(".tab");
+    const sections = {
+      photo: document.getElementById("mode-photo"),
+      video: document.getElementById("mode-video"),
+      audio: document.getElementById("mode-audio"),
+    };
+    tabs.forEach(t => t.addEventListener("click", () => {
+      const mode = t.dataset.mode;
+      tabs.forEach(x => x.classList.toggle("active", x === t));
+      Object.entries(sections).forEach(([k, sec]) => sec.hidden = (k !== mode));
+    }));
+
+    // ============================================================ Helpers communs
+    function setStatus(el, text, cls) {
+      if (!el) return;
+      el.textContent = text;
+      el.className = "status " + cls;
+      el.hidden = false;
+    }
+    function uploadWithProgress(url, formData, onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url);
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable && onProgress) {
+            onProgress(e.loaded, e.total);
+          }
+        });
+        xhr.addEventListener("load", () => {
+          let data = {};
+          try { data = JSON.parse(xhr.responseText); } catch (_) {}
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(data);
+          } else {
+            reject(new Error(data.error || `HTTP ${xhr.status}`));
+          }
+        });
+        xhr.addEventListener("error", () => reject(new Error("réseau")));
+        xhr.addEventListener("abort", () => reject(new Error("annulé")));
+        xhr.send(formData);
+      });
+    }
+    function fmtSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " kB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + " MB";
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    }
+    function fmtTime(sec) {
+      const m = Math.floor(sec / 60), s = sec % 60;
+      return `${m}:${s.toString().padStart(2, "0")}`;
+    }
+
+    // ============================================================ MODE PHOTO
+    const photoInput = document.getElementById("photo-input");
+    const photoCaptureArea = document.getElementById("photo-capture-area");
+    const photoPreviewArea = document.getElementById("photo-preview-area");
+    const cropImg = document.getElementById("crop-img");
+    const photoStatus = document.getElementById("photo-status");
+    const photoProgress = document.getElementById("photo-progress");
+    const photoProgressBar = document.getElementById("photo-progress-bar");
+    const photoSendBtn = document.getElementById("photo-send-btn");
+    const photoNameInput = document.getElementById("photo-name");
+    let cropperInstance = null;
+
+    function photoSwitchToPreview() { photoCaptureArea.hidden = true; photoPreviewArea.hidden = false; }
+    function photoSwitchToCapture() {
+      photoPreviewArea.hidden = true; photoCaptureArea.hidden = false;
+      if (cropperInstance) { try { cropperInstance.destroy(); } catch(_){} cropperInstance = null; }
+      cropImg.src = ""; photoStatus.hidden = true; photoProgress.hidden = true;
+    }
+
+    photoInput.addEventListener("change", (e) => {
+      const file = (e.target.files || [])[0]; e.target.value = "";
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        cropImg.src = ev.target.result;
+        photoSwitchToPreview();
+        cropImg.onload = () => {
+          if (cropperInstance) { try { cropperInstance.destroy(); } catch(_){} }
+          // Phase v0.1.8 — touch device → dragMode "move" pour ne pas
+          // casser la zone aux taps accidentels (équivalent Compagnon
+          // v15.7.24). minCropBox 50px filet sécurité.
+          const isTouch = (navigator.maxTouchPoints > 0) || ("ontouchstart" in window);
+          cropperInstance = new Cropper(cropImg, {
+            viewMode: 1, autoCropArea: 1, background: false,
+            responsive: true, checkOrientation: true,
+            dragMode: isTouch ? "move" : "crop",
+            minCropBoxWidth: 50, minCropBoxHeight: 50,
+          });
+        };
+      };
+      reader.readAsDataURL(file);
+    });
+    document.getElementById("rotate-left").addEventListener("click", () => cropperInstance?.rotate(-90));
+    document.getElementById("rotate-right").addEventListener("click", () => cropperInstance?.rotate(90));
+    document.getElementById("reset-crop").addEventListener("click", () => cropperInstance?.reset());
+    document.getElementById("photo-restart").addEventListener("click", photoSwitchToCapture);
+    photoSendBtn.addEventListener("click", async () => {
+      if (!cropperInstance) return;
+      photoSendBtn.disabled = true; photoSendBtn.textContent = "⏳ Envoi…";
+      setStatus(photoStatus, "⏳ Recadrage et envoi…", "uploading");
+      photoProgress.hidden = false; photoProgressBar.style.width = "0%";
+      let canvas;
+      try {
+        canvas = cropperInstance.getCroppedCanvas({
+          maxWidth: 2000, maxHeight: 2000,
+          imageSmoothingEnabled: true, imageSmoothingQuality: "high",
+        });
+      } catch (e) {
+        setStatus(photoStatus, "❌ " + e.message, "err"); photoSendBtn.disabled = false;
+        photoSendBtn.innerHTML = "<span>✂</span><span>Envoyer au PC</span>"; return;
+      }
+      const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.92));
+      const fd = new FormData();
+      fd.append("file", blob, "cropped_" + Date.now() + ".jpg");
+      const cn = (photoNameInput.value || "").trim();
+      if (cn) fd.append("custom_name", cn);
+      try {
+        const data = await uploadWithProgress("/api/upload_photo", fd, (loaded, total) => {
+          photoProgressBar.style.width = ((loaded / total) * 100).toFixed(0) + "%";
+        });
+        setStatus(photoStatus, `✓ Collée sur PC (${fmtSize(data.size_bytes || 0)}) · Ctrl+V dans ton chat web`, "ok");
+        setTimeout(photoSwitchToCapture, 2200);
+      } catch (e) {
+        setStatus(photoStatus, "❌ " + e.message, "err");
+      } finally {
+        photoSendBtn.disabled = false;
+        photoSendBtn.innerHTML = "<span>✂</span><span>Envoyer au PC</span>";
+      }
+    });
+
+    // ============================================================ MODE VIDÉO
+    const videoCaptureInput = document.getElementById("video-capture-input");
+    const videoImportInput = document.getElementById("video-import-input");
+    const videoCaptureArea = document.getElementById("video-capture-area");
+    const videoPreviewArea = document.getElementById("video-preview-area");
+    const videoPreview = document.getElementById("video-preview");
+    const videoInfo = document.getElementById("video-info");
+    const videoStatus = document.getElementById("video-status");
+    const videoProgress = document.getElementById("video-progress");
+    const videoProgressBar = document.getElementById("video-progress-bar");
+    const videoSendBtn = document.getElementById("video-send-btn");
+    const videoNameInput = document.getElementById("video-name");
+    let pendingVideoFile = null;
+
+    function videoSwitchToPreview(file) {
+      pendingVideoFile = file;
+      videoPreview.src = URL.createObjectURL(file);
+      videoInfo.innerHTML = `<strong>${file.name || "vidéo"}</strong> · ${fmtSize(file.size)} · ${file.type || "?"}`;
+      videoCaptureArea.hidden = true; videoPreviewArea.hidden = false;
+    }
+    function videoSwitchToCapture() {
+      videoCaptureArea.hidden = false; videoPreviewArea.hidden = true;
+      if (videoPreview.src) { try { URL.revokeObjectURL(videoPreview.src); } catch(_){} videoPreview.src = ""; }
+      pendingVideoFile = null;
+      videoStatus.hidden = true; videoProgress.hidden = true;
+    }
+    function _onVideoFile(e) {
+      const file = (e.target.files || [])[0]; e.target.value = "";
+      if (!file) return;
+      videoSwitchToPreview(file);
+    }
+    videoCaptureInput.addEventListener("change", _onVideoFile);
+    videoImportInput.addEventListener("change", _onVideoFile);
+    document.getElementById("video-restart").addEventListener("click", videoSwitchToCapture);
+    videoSendBtn.addEventListener("click", async () => {
+      if (!pendingVideoFile) return;
+      videoSendBtn.disabled = true; videoSendBtn.innerHTML = "<span>⏳</span><span>Envoi…</span>";
+      setStatus(videoStatus, `⏳ Upload (${fmtSize(pendingVideoFile.size)})…`, "uploading");
+      videoProgress.hidden = false; videoProgressBar.style.width = "0%";
+      const fd = new FormData();
+      fd.append("file", pendingVideoFile, pendingVideoFile.name);
+      const cn = (videoNameInput.value || "").trim();
+      if (cn) fd.append("custom_name", cn);
+      try {
+        const data = await uploadWithProgress("/api/upload_video", fd, (loaded, total) => {
+          videoProgressBar.style.width = ((loaded / total) * 100).toFixed(0) + "%";
+          setStatus(videoStatus, `⏳ Upload ${fmtSize(loaded)} / ${fmtSize(total)}…`, "uploading");
+        });
+        setStatus(videoStatus, `✓ Vidéo enregistrée sur PC (${fmtSize(data.size_bytes || 0)})`, "ok");
+        setTimeout(videoSwitchToCapture, 3000);
+      } catch (e) {
+        setStatus(videoStatus, "❌ " + e.message, "err");
+      } finally {
+        videoSendBtn.disabled = false;
+        videoSendBtn.innerHTML = "<span>🚀</span><span>Envoyer au PC</span>";
+      }
+    });
+
+    // ============================================================ MODE AUDIO (MediaRecorder)
+    // Phase v0.1.7 — détection au boot que getUserMedia est dispo (besoin
+    // HTTPS sur mobile). Si non, le bouton micro est grisé et le hint
+    // explique pourquoi + pointe vers l'import.
+    function _detectMicAvailability() {
+      const recBtnEl = document.getElementById("rec-btn");
+      const recHintEl = document.getElementById("rec-hint");
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (recBtnEl) {
+          recBtnEl.style.opacity = "0.4";
+          recBtnEl.style.cursor = "not-allowed";
+          recBtnEl.title = "Enregistrement micro indisponible — utilise « 📁 Importer » ci-dessous";
+        }
+        if (recHintEl) {
+          recHintEl.innerHTML =
+            "⚠ <strong>Micro indisponible</strong> (HTTPS requis sur mobile).<br>" +
+            "Utilise <strong>📁 Importer un audio existant</strong> ci-dessous " +
+            "(enregistre d'abord avec ton app dictaphone système).";
+          recHintEl.style.color = "var(--warn)";
+        }
+      }
+    }
+    _detectMicAvailability();
+
+    const recBtn = document.getElementById("rec-btn");
+    const recTime = document.getElementById("rec-time");
+    const recHint = document.getElementById("rec-hint");
+    const audioImportInput = document.getElementById("audio-import-input");
+    const audioRecArea = document.getElementById("audio-rec-area");
+    const audioPreviewArea = document.getElementById("audio-preview-area");
+    const audioPreview = document.getElementById("audio-preview");
+    const audioInfo = document.getElementById("audio-info");
+    const audioStatus = document.getElementById("audio-status");
+    const audioProgress = document.getElementById("audio-progress");
+    const audioProgressBar = document.getElementById("audio-progress-bar");
+    const audioSendBtn = document.getElementById("audio-send-btn");
+    const audioNameInput = document.getElementById("audio-name");
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let audioStream = null;
+    let recStartTs = 0;
+    let recTimerHandle = null;
+    let pendingAudioBlob = null;
+    let pendingAudioFilename = "audio.webm";
+
+    function audioSwitchToPreview(blob, filename) {
+      pendingAudioBlob = blob;
+      pendingAudioFilename = filename || "audio.webm";
+      audioPreview.src = URL.createObjectURL(blob);
+      audioInfo.innerHTML = `<strong>${filename}</strong> · ${fmtSize(blob.size)} · ${blob.type || "?"}`;
+      audioRecArea.hidden = true; audioPreviewArea.hidden = false;
+    }
+    function audioSwitchToRec() {
+      audioRecArea.hidden = false; audioPreviewArea.hidden = true;
+      if (audioPreview.src) { try { URL.revokeObjectURL(audioPreview.src); } catch(_){} audioPreview.src = ""; }
+      pendingAudioBlob = null;
+      audioStatus.hidden = true; audioProgress.hidden = true;
+      recTime.textContent = "0:00"; recTime.classList.remove("recording");
+      recBtn.classList.remove("recording");
+      recBtn.textContent = "🎤";
+      recHint.textContent = "Touche le micro pour démarrer l'enregistrement";
+    }
+    function startTimer() {
+      recStartTs = Date.now();
+      if (recTimerHandle) clearInterval(recTimerHandle);
+      recTimerHandle = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recStartTs) / 1000);
+        recTime.textContent = fmtTime(elapsed);
+      }, 500);
+    }
+    function stopTimer() {
+      if (recTimerHandle) { clearInterval(recTimerHandle); recTimerHandle = null; }
+    }
+    async function startRecording() {
+      // Phase v0.1.7 — message clair si getUserMedia indisponible.
+      // Cause typique sur mobile : page servie en HTTP (pas HTTPS), ce
+      // qui rend navigator.mediaDevices undefined côté navigateur (sauf
+      // localhost). C'est une restriction de sécurité du navigateur,
+      // pas une question de permissions Android.
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        recHint.innerHTML =
+          "❌ <strong>Enregistrement micro indisponible sur HTTP</strong><br><br>" +
+          "Le navigateur exige HTTPS pour accéder au micro (sauf localhost). " +
+          "<strong>Solution recommandée :</strong> enregistre avec ton app " +
+          "dictaphone Android (Voice Recorder, Dictaphone) puis utilise " +
+          "<strong>📁 Importer un audio existant</strong> ci-dessous.";
+        recHint.style.color = "var(--err)";
+        return;
+      }
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        recHint.textContent = "❌ Microphone refusé : " + e.message;
+        return;
+      }
+      // Format préféré : webm/opus si supporté (Android Chrome), sinon mp4 (iOS)
+      let mimeType = "audio/webm;codecs=opus";
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = "audio/mp4";
+        if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ""; // navigateur choisit
+      }
+      try {
+        mediaRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : undefined);
+      } catch (e) {
+        recHint.textContent = "❌ MediaRecorder erreur : " + e.message;
+        audioStream.getTracks().forEach(t => t.stop());
+        return;
+      }
+      audioChunks = [];
+      // timeslice 30s : flush chunks réguliers, évite buffer RAM énorme sur 3h+
+      mediaRecorder.addEventListener("dataavailable", (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      });
+      mediaRecorder.addEventListener("stop", () => {
+        const finalType = mediaRecorder.mimeType || "audio/webm";
+        const blob = new Blob(audioChunks, { type: finalType });
+        const ext = finalType.includes("mp4") || finalType.includes("m4a") ? "m4a" : "webm";
+        audioStream.getTracks().forEach(t => t.stop());
+        audioStream = null;
+        stopTimer();
+        if (blob.size > 0) {
+          audioSwitchToPreview(blob, `enregistrement.${ext}`);
+        } else {
+          recHint.textContent = "❌ Enregistrement vide";
+          recBtn.classList.remove("recording"); recBtn.textContent = "🎤";
+        }
+      });
+      mediaRecorder.start(30000);  // chunk toutes les 30s
+      recBtn.classList.add("recording"); recBtn.textContent = "⏹";
+      recTime.classList.add("recording");
+      recHint.textContent = "🔴 Enregistrement en cours · re-touche le micro pour arrêter";
+      startTimer();
+    }
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    }
+    recBtn.addEventListener("click", () => {
+      if (!mediaRecorder || mediaRecorder.state === "inactive") {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    });
+    audioImportInput.addEventListener("change", (e) => {
+      const file = (e.target.files || [])[0]; e.target.value = "";
+      if (!file) return;
+      audioSwitchToPreview(file, file.name);
+    });
+    document.getElementById("audio-restart").addEventListener("click", audioSwitchToRec);
+    audioSendBtn.addEventListener("click", async () => {
+      if (!pendingAudioBlob) return;
+      audioSendBtn.disabled = true; audioSendBtn.innerHTML = "<span>⏳</span><span>Envoi…</span>";
+      setStatus(audioStatus, `⏳ Upload (${fmtSize(pendingAudioBlob.size)})…`, "uploading");
+      audioProgress.hidden = false; audioProgressBar.style.width = "0%";
+      const fd = new FormData();
+      fd.append("file", pendingAudioBlob, pendingAudioFilename);
+      const cn = (audioNameInput.value || "").trim();
+      if (cn) fd.append("custom_name", cn);
+      try {
+        const data = await uploadWithProgress("/api/upload_audio", fd, (loaded, total) => {
+          audioProgressBar.style.width = ((loaded / total) * 100).toFixed(0) + "%";
+          setStatus(audioStatus, `⏳ Upload ${fmtSize(loaded)} / ${fmtSize(total)}…`, "uploading");
+        });
+        setStatus(audioStatus, `✓ Audio enregistré sur PC (${fmtSize(data.size_bytes || 0)})`, "ok");
+        setTimeout(audioSwitchToRec, 3000);
+      } catch (e) {
+        setStatus(audioStatus, "❌ " + e.message, "err");
+      } finally {
+        audioSendBtn.disabled = false;
+        audioSendBtn.innerHTML = "<span>🚀</span><span>Envoyer au PC</span>";
+      }
+    });
+  </script>
+</body>
+</html>

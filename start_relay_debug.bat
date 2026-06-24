@@ -1,0 +1,2 @@
+@echo off
+start "Clipboard Relay - DEBUG" cmd /k "cd /d %~dp0 && echo === Lancement Clipboard Relay (debug, console visible) === && echo Tape exit ou ferme la fenetre pour arreter && echo. && python relay.py --debug && echo. && echo === Le service s'est arrete (code %%ERRORLEVEL%%) ==="
